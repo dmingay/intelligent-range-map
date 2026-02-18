@@ -1,0 +1,21 @@
+# Environment
+scripts/.env
+*.pyc
+__pycache__/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated data
+scripts/ev_range.log
+www/ev_range/range_contour.json
+www/ev_range/range_metadata.json
+
+# Valhalla data (too large for git)
+valhalla_data/
+*.osm.pbf
+*.tar

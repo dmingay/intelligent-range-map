@@ -1,0 +1,64 @@
+# ============================================================================
+# Add these sections to your Home Assistant configuration.yaml
+# ============================================================================
+
+# Shell command to trigger range calculation
+shell_command:
+  ev_range_calculate: >
+    cd /config/scripts/ev_range &&
+    /usr/local/bin/python3
+    ev_range_calculator.py
+    2>&1 | tee /config/logs/ev_range.log
+
+# Toggle for automatic updates
+input_boolean:
+  ev_range_auto_update:
+    name: EV Range Auto Update
+    initial: true
+    icon: mdi:map-marker-radius
+
+# ============================================================================
+# Add these automations to your automations.yaml
+# ============================================================================
+
+# Recalculate when SoC changes by more than 5%
+- alias: "EV Range - Recalculate on SoC Change"
+  id: ev_range_soc_change
+  trigger:
+    - platform: state
+      entity_id: sensor.polestar_3988_battery_charge_level
+  condition:
+    - condition: state
+      entity_id: input_boolean.ev_range_auto_update
+      state: "on"
+    - condition: template
+      value_template: >
+        {% set old = trigger.from_state.state | float(0) %}
+        {% set new = trigger.to_state.state | float(0) %}
+        {{ (old - new) | abs > 5 }}
+  action:
+    - delay: "00:00:30"
+    - service: shell_command.ev_range_calculate
+
+# Periodic update every 30 minutes
+- alias: "EV Range - Periodic Update"
+  id: ev_range_periodic
+  trigger:
+    - platform: time_pattern
+      minutes: "/30"
+  condition:
+    - condition: state
+      entity_id: input_boolean.ev_range_auto_update
+      state: "on"
+  action:
+    - service: shell_command.ev_range_calculate
+
+# Update when charging completes
+- alias: "EV Range - Charging Complete"
+  id: ev_range_charge_complete
+  trigger:
+    - platform: state
+      entity_id: sensor.polestar_3988_charging_status
+      to: "Fully Charged"
+  action:
+    - service: shell_command.ev_range_calculate
