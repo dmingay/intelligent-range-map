@@ -35,13 +35,13 @@
     z-index: 1;
   }
 
-  .bottom-bar {
+  .top-bar {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 0;
     background: rgba(10, 14, 23, 0.96);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     padding: 12px 24px;
     z-index: 10;
   }
@@ -330,7 +330,7 @@
   }
 
   @media (max-width: 1000px) {
-    .bottom-bar {
+    .top-bar {
       flex-wrap: wrap;
       gap: 14px;
       padding: 10px 14px;
@@ -384,7 +384,7 @@
     transform: scale(0.95);
   }
 
-  body.is-fullscreen .bottom-bar {
+  body.is-fullscreen .top-bar {
     position: absolute;
     bottom: 0;
     left: 0;
@@ -407,10 +407,7 @@
 <body>
 
 <div class="page-wrapper">
-  <div id="map"></div>
-  <button class="fullscreen-btn" id="fullscreenBtn" title="Toggle fullscreen">&#x26F6;</button>
-
-  <div class="bottom-bar">
+  <div class="top-bar">
     <div class="info-section">
       <div class="title-block">
         <div class="car-icon">&#9889;</div>
@@ -456,6 +453,9 @@
       <div class="ts-method"></div>
     </div>
   </div>
+
+  <div id="map"></div>
+  <button class="fullscreen-btn" id="fullscreenBtn" title="Toggle fullscreen">&#x26F6;</button>
 </div>
 
 <div class="loading-overlay" id="loadingOverlay">
