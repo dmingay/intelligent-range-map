@@ -43,6 +43,7 @@ DRIVETRAIN_EFFICIENCY = 0.90
 REGEN_EFFICIENCY = 0.65
 AUX_POWER_KW = 0.4
 RESERVE_SOC_PCT = 5.0
+VALHALLA_MAX_DISTANCE_KM = 500
 
 HVAC_POWER_MAP = {
     (-30, -10): 5.0, (-10, 0): 4.0, (0, 5): 3.0, (5, 12): 1.5,
@@ -60,7 +61,8 @@ ENERGY_BANDS = [
 def ha_get_state(entity_id):
     try:
         r = requests.get(f"{HA_URL}/api/states/{entity_id}",
-                         headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10)
+                         headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10,
+                         verify=False)
         r.raise_for_status()
         state = r.json().get("state")
         return None if state in ("unknown", "unavailable", None) else state
@@ -75,6 +77,11 @@ def get_vehicle_state():
     oem_range_raw = ha_get_state("sensor.polestar_3988_estimated_range")
     odo_raw = ha_get_state("sensor.polestar_3988_current_odometer")
     charging_raw = ha_get_state("sensor.polestar_3988_charging_status")
+    cycles_raw = ha_get_state("sensor.final_full_cycles")
+    range_lost_raw = ha_get_state("sensor.final_range_lost")
+    days_owned_raw = ha_get_state("sensor.final_days_owned")
+    service_raw = ha_get_state("sensor.final_service_deadline")
+    finish_raw = ha_get_state("sensor.polestar_3988_estimated_fully_charged_time")
     soc = float(soc_raw) if soc_raw else 80.0
     soh = float(soh_raw) if soh_raw else 95.0
     oem_range = float(oem_range_raw) if oem_range_raw else None
@@ -82,7 +89,12 @@ def get_vehicle_state():
     charging = charging_raw or "Unknown"
     log.info(f"Vehicle: SoC={soc}%, SoH={soh}%, OEM range={oem_range}, charging={charging}")
     return {"soc": soc, "soh": soh, "oem_range_km": oem_range,
-            "odometer_km": odometer, "charging_status": charging}
+            "odometer_km": odometer, "charging_status": charging,
+            "charge_cycles": float(cycles_raw) if cycles_raw else None,
+            "range_lost_miles": float(range_lost_raw) if range_lost_raw else None,
+            "days_owned": int(days_owned_raw) if days_owned_raw else None,
+            "service_deadline": service_raw,
+            "est_finish_time": finish_raw}
 
 
 def get_vehicle_position():
@@ -91,7 +103,8 @@ def get_vehicle_position():
         if state and state not in ("home", "not_home"):
             try:
                 r = requests.get(f"{HA_URL}/api/states/{entity}",
-                                 headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10)
+                                 headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10,
+                                 verify=False)
                 attrs = r.json().get("attributes", {})
                 lat, lon = attrs.get("latitude"), attrs.get("longitude")
                 if lat and lon:
@@ -161,10 +174,11 @@ def calculate_range_km(soc, soh, temp_c=15.0, wind_ms=0.0, energy_fraction=1.0):
 
 def fetch_valhalla_isodistance(lat, lon, distances_km):
     """Fetch isodistance polygons from self-hosted Valhalla in a single request."""
-    contours = [{"distance": d} for d in distances_km]
+    capped_km = [min(d, VALHALLA_MAX_DISTANCE_KM) for d in distances_km]
+    contours = [{"distance": d} for d in capped_km]
     data = {"locations": [{"lat": lat, "lon": lon}], "costing": "auto",
             "contours": contours, "polygons": True}
-    dist_str = ", ".join([f"{d:.0f}km" for d in distances_km])
+    dist_str = ", ".join([f"{d:.0f}km" for d in capped_km])
     log.info(f"Valhalla isodistance: {len(contours)} contours, distances=[{dist_str}]")
     try:
         r = requests.post(f"{VALHALLA_URL}/isochrone", json=data, timeout=120)
@@ -182,7 +196,7 @@ def fetch_valhalla_isodistance(lat, lon, distances_km):
                 log.info(f"  Contour {contour_val}km: {geom['type']}")
         # Match by closest distance (Valhalla may round slightly differently)
         results = []
-        for d in distances_km:
+        for d in capped_km:
             match = None
             for vd, geom in geom_by_distance.items():
                 if abs(vd - d) < 1.0:  # within 1km tolerance
@@ -260,7 +274,12 @@ def main():
     metadata = {
         "timestamp": datetime.now().isoformat(), "version": "3.0",
         "vehicle": {"soc_pct": soc, "soh_pct": soh, "oem_range_km": vehicle["oem_range_km"],
-                     "odometer_km": vehicle["odometer_km"], "charging_status": vehicle["charging_status"]},
+                     "odometer_km": vehicle["odometer_km"], "charging_status": vehicle["charging_status"],
+                     "charge_cycles": vehicle.get("charge_cycles"),
+                     "range_lost_miles": vehicle.get("range_lost_miles"),
+                     "days_owned": vehicle.get("days_owned"),
+                     "service_deadline": vehicle.get("service_deadline"),
+                     "est_finish_time": vehicle.get("est_finish_time")},
         "position": {"lat": lat, "lon": lon,
                       "source": "gps" if (lat != DEFAULT_LAT or lon != DEFAULT_LON) else "default"},
         "weather": {"temp_c": weather["temp_c"], "wind_ms": weather["wind_ms"],
